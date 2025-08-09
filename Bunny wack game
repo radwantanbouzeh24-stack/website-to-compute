@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bunny Whack Game</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #5a9a26;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body>
+<script>
+let holes = [];
+let bunny = {
+  holeIndex: 0,
+  visible: false,
+  timer: 0,
+  animProgress: 0,
+  animSpeed: 0.1,
+  color: 'white',
+  hit: false
+};
+let score = 0;
+let highScore = 0;
+let lives = 3;
+let flowers = [];
+let gameState = 'menu'; // 'menu', 'playing', 'paused', 'gameover', 'instructions'
+let particles = [];
+
+let pauseButton, restartButton, instructionsButton, backButton;
+
+function setup() {
+  createCanvas(360, 640);
+
+  holes = [
+    createVector(width * 0.15, height * 0.8),
+    createVector(width * 0.4, height * 0.7),
+    createVector(width * 0.7, height * 0.85),
+    createVector(width * 0.85, height * 0.65),
+    createVector(width * 0.3, height * 0.5),
+    createVector(width * 0.65, height * 0.55),
+    createVector(width * 0.1, height * 0.35),
+    createVector(width * 0.55, height * 0.35),
+    createVector(width * 0.8, height * 0.4)
+  ];
+
+  generateFlowers(20);
+
+  textSize(28);
+  textAlign(LEFT, TOP);
+  frameRate(60);
+
+  setupButtons();
+}
+
+function draw() {
+  drawGrassBackground();
+
+  for (let f of flowers) drawFlower(f.x, f.y);
+
+  for (let i = 0; i < holes.length; i++) drawHoleWithShadow(holes[i].x, holes[i].y);
+
+  drawLives();
+
+  if (gameState === 'menu') {
+    drawMenu();
+  } else if (gameState === 'instructions') {
+    drawInstructions();
+  } else if (gameState === 'gameover') {
+    drawGameOver();
+  } else if (gameState === 'paused') {
+    drawPaused();
+  } else if (gameState === 'playing') {
+    playGame();
+  }
+
+  drawParticles();
+  updateParticles();
+}
+
+function playGame() {
+  if (bunny.visible) {
+    if (!bunny.hit) {
+      if (bunny.timer > 10) {
+        bunny.animProgress += bunny.animSpeed;
+        if (bunny.animProgress > 1) bunny.animProgress = 1;
+      } else {
+        bunny.animProgress -= bunny.animSpeed * 2;
+        if (bunny.animProgress < 0) bunny.animProgress = 0;
+      }
+    } else {
+      bunny.animProgress -= bunny.animSpeed * 3;
+      if (bunny.animProgress < 0) bunny.animProgress = 0;
+    }
+
+    let yOffset = map(bunny.animProgress, 0, 1, 40, 0);
+
+    drawBunnyWithShadow(holes[bunny.holeIndex].x, holes[bunny.holeIndex].y - 40 + yOffset, bunny.color);
+
+    bunny.timer--;
+    if (bunny.timer <= 0 && !bunny.hit) {
+      bunny.visible = false;
+      lives--;
+      if (lives <= 0) {
+        gameState = 'gameover';
+        if (score > highScore) highScore = score;
+      } else {
+        setTimeout(nextBunny, 450);
+      }
+    }
+
+    if (bunny.animProgress <= 0 && bunny.hit) {
+      bunny.visible = false;
+      bunny.hit = false;
+      setTimeout(nextBunny, random(180, 420));
+    }
+  }
+
+  textAlign(LEFT, TOP);
+  textSize(28);
+  fill(255);
+  text('Bunnies: ', 10, 10);
+  fill(0);
+  text(score, 120, 10);
+
+  pauseButton.display();
+  restartButton.display();
+  instructionsButton.display();
+}
+
+function mousePressed() {
+  if (gameState === 'menu') {
+    if (instructionsButton.isMouseOver()) {
+      gameState = 'instructions';
+      return;
+    }
+    gameState = 'playing';
+    resetGame();
+    nextBunny();
+    return;
+  }
+
+  if (gameState === 'instructions') {
+    if (backButton.isMouseOver()) {
+      gameState = 'menu';
+    }
+    return;
+  }
+
+  if (gameState === 'gameover') {
+    resetGame();
+    gameState = 'playing';
+    nextBunny();
+    return;
+  }
+
+  if (gameState === 'paused') {
+    if (restartButton.isMouseOver()) {
+      resetGame();
+      gameState = 'playing';
+      nextBunny();
+    } else if (pauseButton.isMouseOver()) {
+      gameState = 'playing';
+    }
+    return;
+  }
+
+  if (gameState === 'playing') {
+    if (pauseButton.isMouseOver()) {
+      gameState = 'paused';
+      return;
+    }
+    if (restartButton.isMouseOver()) {
+      resetGame();
+      nextBunny();
+      return;
+    }
+    if (instructionsButton.isMouseOver()) {
+      gameState = 'instructions';
+      return;
+    }
+
+    if (!bunny.visible) return;
+
+    let yOffset = map(bunny.animProgress, 0, 1, 40, 0);
+    let d = dist(mouseX, mouseY, holes[bunny.holeIndex].x, holes[bunny.holeIndex].y - 40 + yOffset);
+    if (d < 40) {
+      score++;
+      bunny.hit = true;
+      createParticles(mouseX, mouseY);
+    }
+  }
+}
+
+function resetGame() {
+  score = 0;
+  lives = 3;
+  bunny.visible = false;
+  bunny.hit = false;
+  particles = [];
+}
+
+function nextBunny() {
+  bunny.holeIndex = floor(random(holes.length));
+  bunny.visible = true;
+  bunny.hit = false;
+  bunny.animProgress = 0;
+  bunny.timer = max(80 - floor(score * 2), 40);
+  bunny.color = random(['white', 'brown', 'black']);
+}
+
+function drawHoleWithShadow(x, y) {
+  noStroke();
+  fill(0, 0, 0, 50);
+  ellipse(x, y + 10, 90, 40);
+
+  fill(50, 30, 10);
+  ellipse(x, y, 80, 40);
+  fill(30, 20, 10);
+  ellipse(x, y + 5, 70, 30);
+}
+
+function drawBunnyWithShadow(x, y, c) {
+  noStroke();
+  fill(0, 0, 0, 70);
+  ellipse(x + 5, y + 10, 60, 30);
+
+  if (c === 'white') fill(255);
+  else if (c === 'brown') fill(139, 69, 19);
+  else if (c === 'black') fill(30);
+
+  ellipse(x, y, 50, 50);
+  ellipse(x - 12, y - 30, 15, 35);
+  ellipse(x + 12, y - 30, 15, 35);
+
+  fill(0);
+  ellipse(x - 10, y - 10, 7, 7);
+  ellipse(x + 10, y - 10, 7, 7);
+
+  fill(255, 100, 100);
+  triangle(x, y, x - 5, y + 5, x + 5, y + 5);
+}
+
+function drawLives() {
+  let startX = 10;
+  let y = 50;
+  for (let i = 0; i < 3; i++) {
+    let x = startX + i * 40;
+    if (i < lives) drawHeartSimple(x, y, 18, color(255, 0, 0));
+    else drawHeartSimple(x, y, 18, color(150));
+  }
+}
+
+function drawHeartSimple(x, y, s, col) {
+  push();
+  translate(x, y);
+  noStroke();
+  fill(col);
+  ellipse(-s * 0.25, -s * 0.2, s * 0.5, s * 0.5);
+  ellipse(s * 0.25, -s * 0.2, s * 0.5, s * 0.5);
+  beginShape();
+  vertex(-s * 0.5, 0);
+  vertex(s * 0.5, 0);
+  vertex(0, s * 0.6);
+  endShape(CLOSE);
+  pop();
+}
+
+function generateFlowers(num) {
+  flowers = [];
+  let attempts = 0;
+  while (flowers.length < num && attempts < num * 20) {
+    let pos = createVector(random(width), random(height));
+    let tooCloseToFlowers = flowers.some((f) => p5.Vector.dist(f, pos) < 35);
+    let tooCloseToHoles = holes.some((h) => p5.Vector.dist(h, pos) < 60);
+    if (!tooCloseToFlowers && !tooCloseToHoles) flowers.push(pos);
+    attempts++;
+  }
+}
+
+function drawFlower(x, y) {
+  push();
+  translate(x, y);
+  stroke(30, 120, 30);
+  strokeWeight(2);
+  line(0, 0, 0, 10);
+  noStroke();
+  fill(255, 180, 180);
+  for (let i = 0; i < 6; i++) {
+    ellipse(0, 6, 6, 12);
+    rotate(PI / 3);
+  }
+  fill(255, 220, 80);
+  ellipse(0, 0, 8, 8);
+  pop();
+}
+
+function drawGrassBackground() {
+  background(90, 160, 60);
+  for (let i = 0; i < width; i += 20) {
+    for (let j = 0; j < height; j += 20) {
+      stroke(60, 120, 40);
+      strokeWeight(2);
+      line(i, j + 10, i + 10, j);
+      line(i + 10, j, i + 20, j + 10);
+    }
+  }
+}
+
+function createParticles(x, y) {
+  for (let i = 0; i < 15; i++) {
+    particles.push(new Particle(x, y));
+  }
+}
+
+function drawParticles() {
+  for (let p of particles) {
+    p.show();
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    if (particles[i].alpha <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+class Particle {
+  constructor(x, y) {
+    this.pos = createVector(x, y);
+    this.vel = p5.Vector.random2D().mult(random(1, 3));
+    this.alpha = 255;
+    this.size = random(4, 7);
+  }
+  update() {
+    this.pos.add(this.vel);
+    this.alpha -= 5;
+    if (this.alpha < 0) this.alpha = 0;
+  }
+  show() {
+    noStroke();
+    fill(255, 150, 0, this.alpha);
+    ellipse(this.pos.x, this.pos.y, this.size);
+  }
+}
+
+class Button {
+  constructor(x, y, w, h, label) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+    this.label = label;
+  }
+  display() {
+    fill(200);
+    stroke(100);
+    strokeWeight(2);
+    rect(this.x, this.y, this.w, this.h, 8);
+    noStroke();
+    fill(50);
+    textAlign(CENTER, CENTER);
+    textSize(16);
+    text(this.label, this.x + this.w / 2, this.y + this.h / 2);
+  }
+  isMouseOver() {
+    return mouseX > this.x && mouseX < this.x + this.w &&
+           mouseY > this.y && mouseY < this.y + this.h;
+  }
+}
+
+function setupButtons() {
+  pauseButton = new Button(width - 90, 10, 80, 35, 'Pause');
+  restartButton = new Button(width - 90, 55, 80, 35, 'Restart');
+  instructions
